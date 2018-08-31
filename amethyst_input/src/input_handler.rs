@@ -58,6 +58,60 @@ where
     ///
     /// The Amethyst game engine will automatically call this if the InputHandler is attached to
     /// the world as a resource with id 0.
+
+    pub fn send_net_event(&mut self, event: &InputEvent<AC>, event_handler: &mut EventChannel<InputEvent<AC>>) {
+        match *event {
+            KeyPressed { key_code, scancode } => {
+                if self.pressed_keys.iter().all(|&k| k.0 != key_code) {
+                    self.pressed_keys.push((key_code, scancode));
+                    event_handler.iter_write(
+                        [
+                            KeyPressed { key_code, scancode },
+                            ButtonPressed(Button::Key(key_code)),
+                            ButtonPressed(Button::ScanCode(scancode)),
+                        ].iter()
+                            .cloned(),
+                    );
+                    for (k, v) in self.bindings.actions.iter() {
+                        for &button in v {
+                            if Button::Key(key_code) == button {
+                                event_handler.single_write(ActionPressed(k.clone()));
+                            }
+                            if Button::ScanCode(scancode) == button {
+                                event_handler.single_write(ActionPressed(k.clone()));
+                            }
+                        }
+                    }
+                }
+            },
+            KeyReleased { key_code, scancode } => {
+                let index = self.pressed_keys.iter().position(|&k| k.0 == key_code);
+                    if let Some(i) = index {
+                        self.pressed_keys.swap_remove(i);
+                        event_handler.iter_write(
+                            [
+                                KeyReleased { key_code, scancode },
+                                ButtonReleased(Button::Key(key_code)),
+                                ButtonReleased(Button::ScanCode(scancode)),
+                            ].iter()
+                                .cloned(),
+                        );
+                        for (k, v) in self.bindings.actions.iter() {
+                            for &button in v {
+                                if Button::Key(key_code) == button {
+                                    event_handler.single_write(ActionReleased(k.clone()));
+                                }
+                                if Button::ScanCode(scancode) == button {
+                                    event_handler.single_write(ActionReleased(k.clone()));
+                                }
+                            }
+                        }
+                    }
+                },
+                _ => {},
+        }
+    }
+
     pub fn send_event(&mut self, event: &Event, event_handler: &mut EventChannel<InputEvent<AC>>) {
         match *event {
             Event::WindowEvent { ref event, .. } => match *event {

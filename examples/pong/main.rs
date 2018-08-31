@@ -1,17 +1,26 @@
 //! TODO: Rewrite for new renderer.
 
 extern crate amethyst;
+extern crate serde_json;
+extern crate futures;
+extern crate tokio;
+extern crate tokio_codec;
+extern crate bytes;
+extern crate tokio_io;
+extern crate winit;
 
 mod audio;
 mod bundle;
 mod pong;
 mod systems;
 
+use winit::VirtualKeyCode;
+
 use amethyst::audio::AudioBundle;
 use amethyst::core::frame_limiter::FrameRateLimitStrategy;
 use amethyst::core::transform::TransformBundle;
 use amethyst::ecs::prelude::{Component, DenseVecStorage};
-use amethyst::input::InputBundle;
+use amethyst::input::{InputBundle, InputEvent};
 use amethyst::prelude::*;
 use amethyst::renderer::{DisplayConfig, DrawSprite, Pipeline, RenderBundle, Stage};
 use amethyst::ui::{DrawUi, UiBundle};
@@ -19,6 +28,19 @@ use amethyst::ui::{DrawUi, UiBundle};
 use audio::Music;
 use bundle::PongBundle;
 use std::time::Duration;
+
+use serde_json::Value;
+mod service;
+use service::*;
+mod model;
+use model::*;
+
+use std::fs;
+use std::env;
+use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
+use futures::{Stream, future};
+use futures::sync::mpsc::{unbounded};
 
 const ARENA_HEIGHT: f32 = 100.0;
 const ARENA_WIDTH: f32 = 100.0;
@@ -40,6 +62,43 @@ const AUDIO_BOUNCE: &'static str = "audio/bounce.ogg";
 const AUDIO_SCORE: &'static str = "audio/score.ogg";
 
 fn main() -> amethyst::Result<()> {
+    let mut conf_path = None;
+
+    for arg in env::args().skip(1) {
+        if arg.starts_with("-c") {
+            conf_path = Some(arg.split_at(14).1.to_string());
+        }
+    }
+
+    let conf = if let Some(path) = conf_path {
+        path
+    } else {
+        "./config.json".to_string()
+    };
+    println!("Loading configuration from {}", conf);
+
+    let conf_file = fs::File::open(conf).expect("Failed to read config file");
+    let config: Value= serde_json::from_reader(conf_file).expect("Failed to parse config file");
+    let (sink, stream) = unbounded();
+    let (tx, rx) = mpsc::channel();
+    let sink = Arc::new(Mutex::new(sink));
+    let tx = Arc::new(Mutex::new(tx));
+    let service = Service::new(config);
+    let service_ref = service.clone();
+    let listen_addr = service.addr;
+    println!("Client is connecting to {}", listen_addr);
+    let mut rt = tokio::runtime::Builder::new().build().unwrap();
+    rt.spawn(future::lazy(move || -> Result<(), ()> {
+        tokio::spawn(stream.for_each(move |_| {
+            let tx = tx.lock().unwrap();
+            let event: InputEvent<String> = InputEvent::KeyPressed { key_code: VirtualKeyCode::Down, scancode: 125 };
+            tx.send(vec![event]).unwrap();
+            Ok(())
+        }));
+        service_ref.connect(sink);
+        Ok(())
+    }));
+
     amethyst::start_logger(Default::default());
 
     use pong::Pong;
@@ -82,10 +141,12 @@ fn main() -> amethyst::Result<()> {
         .with_bundle(TransformBundle::new().with_dep(&["ball_system", "paddle_system"]))?
         .with_bundle(AudioBundle::new(|music: &mut Music| music.music.next()))?
         .with_bundle(UiBundle::<String, String>::new())?;
+    let rx = Some(Arc::new(Mutex::new(rx)));
     let mut game = Application::build(assets_dir, Pong)?
+        .with_resource(rx)
         .with_frame_limit(
-            FrameRateLimitStrategy::SleepAndYield(Duration::from_millis(2)),
-            144,
+            FrameRateLimitStrategy::SleepAndYield(Duration::from_millis(20)),
+            10,
         )
         .build(game_data)?;
     game.run();

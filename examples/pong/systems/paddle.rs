@@ -21,6 +21,8 @@ impl<'s> System<'s> for PaddleSystem {
 
         // Iterate over all planks and move them according to the input the user
         // provided.
+        //
+        println!("Paddle system Tick with time delta: {}", time.delta_seconds());
         for (paddle, transform) in (&paddles, &mut transforms).join() {
             let opt_movement = match paddle.side {
                 Side::Left => input.axis_value("left_paddle"),
@@ -29,6 +31,7 @@ impl<'s> System<'s> for PaddleSystem {
 
             if let Some(movement) = opt_movement {
                 use ARENA_HEIGHT;
+                println!("Translate: {} | {}", time.delta_seconds(), movement);
                 transform.translation[1] +=
                     paddle.velocity * time.delta_seconds() * movement as f32;
 

@@ -191,7 +191,7 @@ impl<'a, T, E: Send + Sync + Clone + 'static> Application<'a, T, E> {
         self.world.write_resource::<Stopwatch>().start();
         while self.states.is_running() {
             self.advance_frame();
-
+            println!("Game frame Tick!");
             self.world.write_resource::<FrameLimiter>().wait();
             {
                 let elapsed = self.world.read_resource::<Stopwatch>().elapsed();
