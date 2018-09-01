@@ -52,7 +52,8 @@ impl Server {
     pub fn get_frame(&self) -> Message {
         // TODO: Compose data frames here
         let _cache = self.cache.lock().unwrap();
-        Message::DataFrame { battle: 0 }
+        let code = 0;
+        Message::DataFrame { battle: 0, code }
     }
 
     #[allow(dead_code)]

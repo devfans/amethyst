@@ -88,13 +88,31 @@ fn main() -> amethyst::Result<()> {
     let listen_addr = service.addr;
     println!("Client is connecting to {}", listen_addr);
     let mut rt = tokio::runtime::Builder::new().build().unwrap();
+    rt.spawn(stream.for_each(move |msg| {
+        match msg {
+            Message::DataFrame { code, .. } => {
+                let tx = tx.lock().unwrap();
+                let event: Option<InputEvent<String>> = match code {
+                    1 => Some(InputEvent::KeyPressed { key_code: VirtualKeyCode::S, scancode: 1 }),
+                    5 => Some(InputEvent::KeyReleased { key_code: VirtualKeyCode::S, scancode: 1 }),
+                    13 => Some(InputEvent::KeyPressed { key_code: VirtualKeyCode::W, scancode: 13 }),
+                    6 => Some(InputEvent::KeyReleased { key_code: VirtualKeyCode::W, scancode: 13 }),
+                    125 => Some(InputEvent::KeyPressed { key_code: VirtualKeyCode::Down, scancode: 125 }),
+                    7 => Some(InputEvent::KeyReleased { key_code: VirtualKeyCode::Down, scancode: 125 }),
+                    126 => Some(InputEvent::KeyPressed { key_code: VirtualKeyCode::Up, scancode: 126 }),
+                    8 => Some(InputEvent::KeyReleased { key_code: VirtualKeyCode::Up, scancode: 126 }),
+                    _ => None,
+                };
+                if let Some(event) = event {
+                    tx.send(vec![event]).unwrap();
+                }
+            },
+            _ => {}
+        }
+        Ok(())
+    }));
+
     rt.spawn(future::lazy(move || -> Result<(), ()> {
-        tokio::spawn(stream.for_each(move |_| {
-            let tx = tx.lock().unwrap();
-            let event: InputEvent<String> = InputEvent::KeyPressed { key_code: VirtualKeyCode::Down, scancode: 125 };
-            tx.send(vec![event]).unwrap();
-            Ok(())
-        }));
         service_ref.connect(sink);
         Ok(())
     }));
