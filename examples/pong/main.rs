@@ -8,6 +8,7 @@ extern crate tokio_codec;
 extern crate bytes;
 extern crate tokio_io;
 extern crate winit;
+extern crate moba_proto;
 
 mod audio;
 mod bundle;
@@ -30,10 +31,8 @@ use bundle::PongBundle;
 use std::time::Duration;
 
 use serde_json::Value;
-mod service;
-use service::*;
-mod model;
-use model::*;
+use moba_proto::Service;
+use moba_proto::Message;
 
 use std::fs;
 use std::env;
