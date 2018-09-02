@@ -89,22 +89,27 @@ fn main() -> amethyst::Result<()> {
     let mut rt = tokio::runtime::Builder::new().build().unwrap();
     rt.spawn(stream.for_each(move |msg| {
         match msg {
-            Message::DataFrame { code, .. } => {
-                let tx = tx.lock().unwrap();
-                let event: Option<InputEvent<String>> = match code {
-                    1 => Some(InputEvent::KeyPressed { key_code: VirtualKeyCode::S, scancode: 1 }),
-                    5 => Some(InputEvent::KeyReleased { key_code: VirtualKeyCode::S, scancode: 1 }),
-                    13 => Some(InputEvent::KeyPressed { key_code: VirtualKeyCode::W, scancode: 13 }),
-                    6 => Some(InputEvent::KeyReleased { key_code: VirtualKeyCode::W, scancode: 13 }),
-                    125 => Some(InputEvent::KeyPressed { key_code: VirtualKeyCode::Down, scancode: 125 }),
-                    7 => Some(InputEvent::KeyReleased { key_code: VirtualKeyCode::Down, scancode: 125 }),
-                    126 => Some(InputEvent::KeyPressed { key_code: VirtualKeyCode::Up, scancode: 126 }),
-                    8 => Some(InputEvent::KeyReleased { key_code: VirtualKeyCode::Up, scancode: 126 }),
-                    _ => None,
-                };
-                if let Some(event) = event {
-                    tx.send(vec![event]).unwrap();
+            Message::DataFrame { actions, .. } => {
+                let mut events = Vec::new();
+                for action in actions {
+                    let _player = action.player;
+                    let scancode = action.code as u32;
+                    let key_code = match scancode {
+                        1 => VirtualKeyCode::S,
+                        13 => VirtualKeyCode::W,
+                        125 => VirtualKeyCode::Down,
+                        126 => VirtualKeyCode::Up,
+                        _ => VirtualKeyCode::A,
+                    };
+                    let event: InputEvent<String> = match action.action {
+                        0 => InputEvent::KeyPressed { key_code, scancode },
+                        1 => InputEvent::KeyReleased { key_code, scancode },
+                        _ => InputEvent::KeyReleased { key_code, scancode },
+                    };
+                    events.push(event);
                 }
+                let tx = tx.lock().unwrap();
+                tx.send(events).unwrap();
             },
             _ => {}
         }

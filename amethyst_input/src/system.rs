@@ -81,6 +81,7 @@ where
         let net_rx = rx.as_ref().unwrap();
         let rx = net_rx.lock().unwrap();
         let events = rx.recv().unwrap();
+        println!("Total {} net events", events.len());
         for event in events {
             Self::process_net_event(&event, &mut *handler, &mut *output);
         }
