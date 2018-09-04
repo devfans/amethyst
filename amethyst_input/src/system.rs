@@ -9,6 +9,7 @@ use amethyst_core::specs::prelude::{Read, Resources, System, Write};
 use std::hash::Hash;
 use winit::Event;
 use {Bindings, InputEvent, InputHandler};
+use futures::sync::mpsc;
 
 /// Input system
 ///
@@ -40,11 +41,12 @@ where
         event: &Event,
         handler: &mut InputHandler<AX, AC>,
         output: &mut EventChannel<InputEvent<AC>>,
+        tx: &mut mpsc::UnboundedSender<InputEvent<AC>>,
     ) where
         AX: Hash + Eq + Clone + Send + Sync + 'static,
         AC: Hash + Eq + Clone + Send + Sync + 'static,
     {
-        handler.send_event(event, output);
+        handler.send_event(event, output, tx);
     }
 
     fn process_net_event(
@@ -72,11 +74,11 @@ where
         Write<'a, EventChannel<InputEvent<AC>>>,
         Write<'a, Time>,
         Read<'a, Option<Arc<Mutex<Receiver<Vec<InputEvent<AC>>>>>>>,
+        Read<'a, Option<Arc<Mutex<mpsc::UnboundedSender<InputEvent<AC>>>>>>,
     );
 
-    fn run(&mut self, (input, mut handler, mut output, mut time, rx): Self::SystemData) {
-        /// Set Fixed time delta
-        time.set_delta_time(Duration::from_millis(100));
+    fn run(&mut self, (input, mut handler, mut output, mut time, rx, tx): Self::SystemData) {
+        time.set_delta_time(Duration::from_millis(20));
         println!("Input system Tick with time delta: {}", time.delta_seconds());
         let net_rx = rx.as_ref().unwrap();
         let rx = net_rx.lock().unwrap();
@@ -86,9 +88,11 @@ where
             Self::process_net_event(&event, &mut *handler, &mut *output);
         }
         // println!("Net_RX: {:?}", events);
+        let tx = tx.as_ref().unwrap();
+        let mut tx = tx.lock().unwrap();
         for event in input.read(&mut self.reader.as_mut().unwrap()) {
             println!("New event: {:?}", event);
-            Self::process_event(event, &mut *handler, &mut *output);
+            Self::process_event(event, &mut *handler, &mut *output, &mut *tx);
         }
     }
 

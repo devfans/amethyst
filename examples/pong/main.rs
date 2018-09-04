@@ -33,12 +33,14 @@ use std::time::Duration;
 use serde_json::Value;
 use moba_proto::Service;
 use moba_proto::Message;
+use moba_proto::Client;
+use moba_proto::GameAction;
 
 use std::fs;
 use std::env;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
-use futures::{Stream, future};
+use futures::{Stream, future, Sink};
 use futures::sync::mpsc::{unbounded};
 
 const ARENA_HEIGHT: f32 = 100.0;
@@ -78,15 +80,39 @@ fn main() -> amethyst::Result<()> {
 
     let conf_file = fs::File::open(conf).expect("Failed to read config file");
     let config: Value= serde_json::from_reader(conf_file).expect("Failed to parse config file");
+    let service = Service::new(config);
+    let service_ref = service.clone();
     let (sink, stream) = unbounded();
+    let (upnet_tx, upnet_rx) = unbounded();
+    let upnet_tx = Arc::new(Mutex::new(upnet_tx));
     let (tx, rx) = mpsc::channel();
     let sink = Arc::new(Mutex::new(sink));
     let tx = Arc::new(Mutex::new(tx));
-    let service = Service::new(config);
-    let service_ref = service.clone();
     let listen_addr = service.addr;
     println!("Client is connecting to {}", listen_addr);
     let mut rt = tokio::runtime::Builder::new().build().unwrap();
+    let (up_tx, up_rx) = unbounded();
+    rt.spawn(up_rx.for_each(move |event: InputEvent<String>| {
+        println!("Sending event {:?}", event.clone());
+        let mut tx = upnet_tx.lock().unwrap();
+        match event {
+            InputEvent::KeyPressed {
+                scancode, ..
+            } => {
+                let actions = vec![GameAction { player: 0, code: scancode as u8, action: 0 }];
+                let _ = tx.start_send(Message::DataInput { battle: 0, player: 0, actions}).unwrap();
+            },
+            InputEvent::KeyReleased {
+                scancode, ..
+            } => {
+                let actions = vec![GameAction { player: 0, code: scancode as u8, action: 1 }];
+                let _ = tx.start_send(Message::DataInput { battle: 0, player: 0, actions}).unwrap();
+            },
+            _ => {},
+        }
+        Ok(()) 
+    }));
+
     rt.spawn(stream.for_each(move |msg| {
         match msg {
             Message::DataFrame { actions, .. } => {
@@ -117,7 +143,10 @@ fn main() -> amethyst::Result<()> {
     }));
 
     rt.spawn(future::lazy(move || -> Result<(), ()> {
-        service_ref.connect(sink);
+        let client = Client::new(upnet_rx);
+        let client_clone = client.clone();
+
+        service_ref.connect(sink, client_clone);
         Ok(())
     }));
 
@@ -164,8 +193,10 @@ fn main() -> amethyst::Result<()> {
         .with_bundle(AudioBundle::new(|music: &mut Music| music.music.next()))?
         .with_bundle(UiBundle::<String, String>::new())?;
     let rx = Some(Arc::new(Mutex::new(rx)));
+    let tx = Some(Arc::new(Mutex::new(up_tx)));
     let mut game = Application::build(assets_dir, Pong)?
         .with_resource(rx)
+        .with_resource(tx)
         .with_frame_limit(
             FrameRateLimitStrategy::SleepAndYield(Duration::from_millis(20)),
             10,

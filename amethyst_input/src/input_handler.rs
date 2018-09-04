@@ -11,6 +11,8 @@ use std::hash::Hash;
 use winit::{
     DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent,
 };
+use futures::sync::mpsc;
+use futures::Sink;
 
 /// This struct holds state information about input devices.
 ///
@@ -112,7 +114,7 @@ where
         }
     }
 
-    pub fn send_event(&mut self, event: &Event, event_handler: &mut EventChannel<InputEvent<AC>>) {
+    pub fn send_event(&mut self, event: &Event, event_handler: &mut EventChannel<InputEvent<AC>>, tx: &mut mpsc::UnboundedSender<InputEvent<AC>>) {
         match *event {
             Event::WindowEvent { ref event, .. } => match *event {
                 WindowEvent::ReceivedCharacter(c) => {
@@ -127,26 +129,8 @@ where
                             ..
                         },
                     ..
-                } => if self.pressed_keys.iter().all(|&k| k.0 != key_code) {
-                    self.pressed_keys.push((key_code, scancode));
-                    event_handler.iter_write(
-                        [
-                            KeyPressed { key_code, scancode },
-                            ButtonPressed(Button::Key(key_code)),
-                            ButtonPressed(Button::ScanCode(scancode)),
-                        ].iter()
-                            .cloned(),
-                    );
-                    for (k, v) in self.bindings.actions.iter() {
-                        for &button in v {
-                            if Button::Key(key_code) == button {
-                                event_handler.single_write(ActionPressed(k.clone()));
-                            }
-                            if Button::ScanCode(scancode) == button {
-                                event_handler.single_write(ActionPressed(k.clone()));
-                            }
-                        }
-                    }
+                } => {
+                    let _ = tx.start_send(KeyPressed { key_code, scancode }).unwrap();
                 },
                 WindowEvent::KeyboardInput {
                     input:
@@ -158,28 +142,7 @@ where
                         },
                     ..
                 } => {
-                    let index = self.pressed_keys.iter().position(|&k| k.0 == key_code);
-                    if let Some(i) = index {
-                        self.pressed_keys.swap_remove(i);
-                        event_handler.iter_write(
-                            [
-                                KeyReleased { key_code, scancode },
-                                ButtonReleased(Button::Key(key_code)),
-                                ButtonReleased(Button::ScanCode(scancode)),
-                            ].iter()
-                                .cloned(),
-                        );
-                        for (k, v) in self.bindings.actions.iter() {
-                            for &button in v {
-                                if Button::Key(key_code) == button {
-                                    event_handler.single_write(ActionReleased(k.clone()));
-                                }
-                                if Button::ScanCode(scancode) == button {
-                                    event_handler.single_write(ActionReleased(k.clone()));
-                                }
-                            }
-                        }
-                    }
+                    let _ = tx.start_send(KeyReleased { key_code, scancode }).unwrap();
                 }
                 WindowEvent::MouseInput {
                     state: ElementState::Pressed,

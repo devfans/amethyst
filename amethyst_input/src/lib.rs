@@ -7,6 +7,7 @@ extern crate fnv;
 extern crate serde;
 extern crate smallvec;
 extern crate winit;
+extern crate futures;
 
 #[cfg(feature = "sdl_controller")]
 extern crate sdl2;
